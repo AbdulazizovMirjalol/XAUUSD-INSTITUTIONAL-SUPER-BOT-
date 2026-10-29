@@ -27,11 +27,15 @@ def evaluate_signal_quality(
     tp1: float,
     current_price: float,
     atr_val: float,
-    rr_ratio: float
+    rr_ratio: float,
+    is_judas_bullish: bool = False,
+    is_judas_bearish: bool = False,
+    metals_bullish: bool = False,
+    metals_bearish: bool = False
 ) -> SignalQualityResult:
     """
     BUY va SELL dalillarini alohida hisoblaydi.
-    Konflikt (qarama-qarshilik) qanchalik baland bo'lsa, umumiy sifat shuncha tushadi.
+    Yangi institutsional faktorlar (Judas Swing, Kumush SMT) tegishli yo'nalishga kuch qo'shadi!
     """
     buy_score = 0
     sell_score = 0
@@ -49,11 +53,10 @@ def evaluate_signal_quality(
     if regime == "TRENDING_UP": buy_score += 20
     elif regime == "TRENDING_DOWN": sell_score += 20
     elif regime in ["HIGH_VOLATILITY_RISK", "LOW_LIQUIDITY_CHOP"]:
-        # Ikkala tomonga ham xavf baland
         buy_score = max(0, buy_score - 15)
         sell_score = max(0, sell_score - 15)
 
-    # 4. SMT Tasdiq
+    # 4. SMT Tasdiq (DXY)
     if "TASDIQ" in smt_msg:
         if "BUY" in smt_msg: buy_score += 15
         elif "SELL" in smt_msg: sell_score += 15
@@ -69,6 +72,17 @@ def evaluate_signal_quality(
     if is_active_session:
         buy_score += 5
         sell_score += 5
+
+    # 6. YANGI INSTITUTSIONAL KUCHAYTIRGICHLAR (Judas Swing & Metallar SMT):
+    if is_judas_bullish:
+        buy_score += 8
+    if is_judas_bearish:
+        sell_score += 8
+
+    if metals_bullish:
+        buy_score += 8
+    if metals_bearish:
+        sell_score += 8
 
     buy_score = _clamp(buy_score)
     sell_score = _clamp(sell_score)

@@ -3,13 +3,28 @@ import pandas as pd
 import os
 from config import CHART_IMAGE_PATH
 
-def draw_and_save_chart(df, signal, entry, sl, tp1, tp2=None, tp3=None, filepath=CHART_IMAGE_PATH):
+def draw_and_save_chart(
+    df, 
+    signal, 
+    entry, 
+    sl, 
+    tp1, 
+    tp2=None, 
+    tp3=None, 
+    poc=None, 
+    asian_high=None, 
+    asian_low=None, 
+    filepath=CHART_IMAGE_PATH
+):
     """
-    Olingan M15 ma'lumotlaridan qora fonda professional grafik chizadi
-    va barcha darajalarni (Entry, SL, TP1, TP2, TP3) aks ettiradi.
+    Olingan M15 ma'lumotlaridan qora fonda professional grafik chizadi:
+    - Shamlar (Yashil/Qizil)
+    - Entry, SL, TP1, TP2, TP3 darajalari
+    - POC (Volume Profile Point of Control) oltin rangli chizig'i
+    - Osiyo diapazoni (Asian High va Low) chiziqlari
     """
     try:
-        fig, ax = plt.subplots(figsize=(13, 6.5), facecolor="#0b0e14")
+        fig, ax = plt.subplots(figsize=(13.5, 7.0), facecolor="#0b0e14")
         COLOR_BG = "#0b0e14"
         COLOR_UP = "#26a69a"     # Yashil
         COLOR_DOWN = "#ef5350"   # Qizil
@@ -28,7 +43,7 @@ def draw_and_save_chart(df, signal, entry, sl, tp1, tp2=None, tp3=None, filepath
             # Wick
             ax.plot([i, i], [row["low"], row["high"]], color=color, linewidth=1)
 
-        # Chiziqlar
+        # 1. Asosiy savdo darajalari
         if entry:
             ax.axhline(entry, color="#ffffff", linestyle="--", linewidth=1.5, label=f"ENTRY: {entry}")
         if sl:
@@ -40,11 +55,21 @@ def draw_and_save_chart(df, signal, entry, sl, tp1, tp2=None, tp3=None, filepath
         if tp3:
             ax.axhline(tp3, color="#00e5ff", linestyle=":", linewidth=1.5, label=f"TP3 (Runner): {tp3}")
 
+        # 2. Volume Profile POC (Point of Control)
+        if poc:
+            ax.axhline(poc, color="#ffb300", linestyle="--", linewidth=1.2, alpha=0.85, label=f"POC (Hajm markazi): {poc}")
+
+        # 3. Osiyo sessiyasi darajalari (Asian Range)
+        if asian_high:
+            ax.axhline(asian_high, color="#ba68c8", linestyle=":", linewidth=1.0, alpha=0.75, label=f"Asian High: {asian_high}")
+        if asian_low:
+            ax.axhline(asian_low, color="#ba68c8", linestyle=":", linewidth=1.0, alpha=0.75, label=f"Asian Low: {asian_low}")
+
         ax.tick_params(colors=COLOR_TEXT)
         for spine in ax.spines.values():
             spine.set_color("#1f2937")
 
-        ax.legend(facecolor=COLOR_BG, labelcolor=COLOR_TEXT, loc="upper left", framealpha=0.85)
+        ax.legend(facecolor=COLOR_BG, labelcolor=COLOR_TEXT, loc="upper left", framealpha=0.85, fontsize=9)
         plt.title(f"XAUUSD (M15) — INSTITUTIONAL {signal} SETUP", color=COLOR_TEXT, fontsize=14, pad=12, fontweight="bold")
         plt.grid(color="#1f2937", linewidth=0.5, linestyle=":")
         

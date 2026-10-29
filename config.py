@@ -14,6 +14,7 @@ SEND_CHART_IMAGE = True
 # ==============================================================================
 PREFERRED_SYMBOL = "XAUUSD"
 GOLD_SYMBOLS = ["XAUUSDm", "XAUUSD", "XAUUSD.", "XAUUSDc", "GOLDm", "GOLD"]
+SILVER_SYMBOLS = ["XAGUSDm", "XAGUSD", "XAGUSD.", "XAGUSDc", "SILVERm", "SILVER"]
 DXY_SYMBOLS = ["DXYm", "USDXm", "DXY", "USDX", "USDX.", "DX", "USDOLLAR"]
 EUR_SYMBOLS = ["EURUSDm", "EURUSD", "EURUSD."]
 
@@ -81,12 +82,11 @@ NEWS_BLOCK_MINUTES_BEFORE = 30
 NEWS_BLOCK_MINUTES_AFTER = 45
 
 # ==============================================================================
-# AVTOMATIK SAVDO (MT5 AUTO EXECUTION)
+# AVTOMATIK SAVDO SOZLAMASI (MUTLAQ O'CHIRILGAN)
 # ==============================================================================
-ENABLE_AUTO_TRADE = False       # Faqat signal berish: False | Avtomatik order: True
-LOT_SIZE = 0.01
-MAGIC_NUMBER = 777999
-LIMIT_ORDER_EXPIRATION_HOURS = 2
+# Bot hisobingizda hech qanday bitim ochmaydi / yopmaydi.
+# Faqat va faqat chuqur tahlil va signallarni Telegramga yuboradi.
+ENABLE_AUTO_TRADE = False
 
 # ==============================================================================
 # LOG VA JURNAL YO'LLARI

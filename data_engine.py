@@ -3,6 +3,7 @@ import pandas as pd
 from config import (
     PREFERRED_SYMBOL,
     GOLD_SYMBOLS,
+    SILVER_SYMBOLS,
     DXY_SYMBOLS,
     EUR_SYMBOLS,
     M15_BARS,
@@ -80,6 +81,13 @@ def get_multi_timeframe_data():
                 dxy_mode = "INVERSE_EURUSD"
                 dxy_sym = eur_symbol
 
+        # 3. Kumush (XAGUSD) ma'lumotlarini yuklash (Metallararo SMT uchun)
+        silver_df, silver_sym = None, None
+        silver_symbol = find_active_symbol(SILVER_SYMBOLS)
+        if silver_symbol:
+            silver_df = fetch_rates_dataframe(silver_symbol, mt5.TIMEFRAME_M15, 60)
+            silver_sym = silver_symbol
+
         return {
             "symbol": gold_sym,
             "m15": m15_df,
@@ -89,6 +97,8 @@ def get_multi_timeframe_data():
             "dxy_df": dxy_df,
             "dxy_mode": dxy_mode,
             "dxy_symbol": dxy_sym,
+            "silver_df": silver_df,
+            "silver_symbol": silver_sym,
         }
     finally:
         mt5.shutdown()

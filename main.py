@@ -1,7 +1,15 @@
+import sys
 import time
 from datetime import datetime
 import os
 import pandas as pd
+
+# Windows CP1251 / CMD konsolida emojilar xatosiz chiqishi uchun UTF-8 o'rnatish
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 from config import (
     TELEGRAM_BOT_TOKEN,
@@ -10,8 +18,7 @@ from config import (
     ENABLE_MARKET_REGIME_FILTER,
     MIN_CONFLUENCE_SCORE,
     MIN_QUALITY_SCORE,
-    MAX_CONFLICT_SCORE,
-    ENABLE_AUTO_TRADE
+    MAX_CONFLICT_SCORE
 )
 
 from data_engine import get_multi_timeframe_data
@@ -23,16 +30,16 @@ from market_regime_engine import detect_market_regime
 from signal_quality_engine import evaluate_signal_quality
 from news_engine import check_news_filter
 from time_engine import check_kill_zone
-from smt_engine import check_smt_divergence
+from smt_engine import check_smt_divergence, check_gold_silver_smt
 from confluence_engine import calculate_confluence
 from macro_engine import calculate_fibonacci_zones, generate_mirjalol_insight
+from asian_range_engine import calculate_asian_range_and_judas
+from volume_profile_engine import calculate_volume_profile
 from chart_engine import draw_and_save_chart
 from telegram_bot import send_telegram_message, send_telegram_photo, start_telegram_listener, set_analysis_callback
 from tracker_engine import log_signal, update_pending_outcomes
 from ml_engine import check_ml_approval
-from trader import place_limit_order
 
-# Oxirgi yuborilgan signal vaqti (takrorlanishdan saqlash uchun)
 LAST_SIGNALED_EVENT_TIME = None
 
 def process_engines(df):
@@ -49,11 +56,9 @@ def process_engines(df):
 def run_scanner(force_notify=False):
     """
     Bozorni skaner qilishning asosiy boshqaruvchi (Orchestrator) funksiyasi.
-    force_notify=True bo'lsa (masalan Telegramdagi "Tahlil qilish" tugmasi bosilganda), 
-    hatto yangi signal bo'lmasa ham joriy holat tahlilini Telegramga yuboradi.
     """
     global LAST_SIGNALED_EVENT_TIME
-    print(f"\n🔍 [{datetime.now().strftime('%H:%M:%S')}] XAUUSD Bozor skaner qilinmoqda (Institutional Super-AI)...")
+    print(f"\n🔍 [{datetime.now().strftime('%H:%M:%S')}] XAUUSD Bozor skaner qilinmoqda (Super Institutional Quant)...")
 
     # 1. Avvalgi signallarning natijalarini (WIN/LOSS) yangilash
     try:
@@ -75,6 +80,8 @@ def run_scanner(force_notify=False):
     dxy_df = market_data["dxy_df"]
     dxy_mode = market_data["dxy_mode"]
     dxy_sym = market_data["dxy_symbol"]
+    silver_df = market_data.get("silver_df")
+    silver_sym = market_data.get("silver_symbol", "XAGUSDm")
 
     if m15_df is None or h4_df is None:
         print("❌ Shamlar yetarli emas.")
@@ -122,7 +129,7 @@ def run_scanner(force_notify=False):
     high_volume = False
     current_event_time = None
 
-    # Swing Low va Swing High (SL va Fibo uchun)
+    # Swing Low va Swing High
     swing_lows = m15_df[m15_df['Swing_Low']]['Swing_Low_Price'].dropna()
     swing_highs = m15_df[m15_df['Swing_High']]['Swing_High_Price'].dropna()
     recent_swing_low = swing_lows.tail(3).min() if not swing_lows.empty else current_price - (current_atr * 2)
@@ -150,14 +157,38 @@ def run_scanner(force_notify=False):
     is_danger_news, news_msg = check_news_filter(current_time)
     is_active_session, session_msg = check_kill_zone(current_time)
 
-    # 8. Dastlabki Texnik Signal
+    # 8. YANGI: Osiyo diapazoni va Judas Swing tuzog'i
+    asian_info = calculate_asian_range_and_judas(m15_df)
+    is_judas_bullish = asian_info["is_judas_bullish"]
+    is_judas_bearish = asian_info["is_judas_bearish"]
+    asian_high = asian_info["asian_high"]
+    asian_low = asian_info["asian_low"]
+    asian_judas_comment = asian_info["judas_comment"]
+
+    # 9. YANGI: Volume Profile (POC, VAH, VAL)
+    vp_info = calculate_volume_profile(m15_df, lookback_bars=80)
+    poc_price = vp_info["poc"]
+    vp_status = vp_info["profile_status"]
+
+    # 10. YANGI: Oltin va Kumush (XAU vs XAG) metallararo SMT
+    metals_smt_div, metals_smt_bullish, metals_smt_msg = check_gold_silver_smt(m15_df, silver_df, silver_sym)
+
+    # 11. Dastlabki Texnik Signal
     temp_signal = "WAIT"
     if "BULLISH" in bias and any(k in trigger_info for k in ["Bullish", "Pastki"]):
         temp_signal = "BUY"
     elif "BEARISH" in bias and any(k in trigger_info for k in ["Bearish", "Yuqori"]):
         temp_signal = "SELL"
 
-    # 3TF Alignment filtri
+    # Agar Judas Swing tasdiqlasa, bu signalni yanada ustuvor qiladi
+    if is_judas_bullish and temp_signal != "SELL":
+        temp_signal = "BUY"
+        trigger_info += " + [🔥 JUDAS SWING]"
+    elif is_judas_bearish and temp_signal != "BUY":
+        temp_signal = "SELL"
+        trigger_info += " + [🔥 JUDAS SWING]"
+
+    # 3TF Alignment filtri (faqat qat'iy ziddiyat bo'lsa)
     if ENABLE_3TF_ALIGNMENT:
         if temp_signal == "BUY" and d1_bias == "BEARISH":
             temp_signal = "WAIT"
@@ -166,29 +197,39 @@ def run_scanner(force_notify=False):
             temp_signal = "WAIT"
             trigger_info += " (⚠️ D1 o'sishda, SELL to'xtatildi)"
 
-    # Market Regime filtri (xavfli yoki o'lik bozorda savdo qilmaslik)
+    # Market Regime filtri
     if ENABLE_MARKET_REGIME_FILTER:
         if regime_res.regime in ["HIGH_VOLATILITY_RISK", "LOW_LIQUIDITY_CHOP"]:
             temp_signal = "WAIT"
 
-    # 9. SMT Divergence
+    # 12. Dollar SMT Divergence
     is_fakeout, smt_msg = check_smt_divergence(temp_signal, dxy_df, dxy_mode, dxy_sym)
     if is_fakeout:
         temp_signal = "WAIT"
 
-    # 10. Confluence Bali (20 ballik tizim)
+    # 13. Confluence Bali (Yangi faktorlar bonus sifatida hisoblanadi!)
+    is_judas = (temp_signal == "BUY" and is_judas_bullish) or (temp_signal == "SELL" and is_judas_bearish)
+    metals_confirmed = (temp_signal == "BUY" and metals_smt_bullish) or (temp_signal == "SELL" and not metals_smt_bullish and metals_smt_div)
+
     conf_score, conf_grade = calculate_confluence(
-        bias, trigger_info, smt_msg, is_active_session, high_volume, regime_res.regime
+        bias=bias, 
+        trigger_info=trigger_info, 
+        smt_msg=smt_msg, 
+        is_active_session=is_active_session, 
+        high_volume=high_volume, 
+        regime=regime_res.regime,
+        is_judas=is_judas,
+        metals_smt_confirmed=metals_confirmed
     )
 
-    # 11. Darajalar: Entry (Pro Scalper Pullback Limit), SL, Multi-TP (TP1, TP2, TP3)
+    # 14. Darajalar: Entry (Pullback Limit), SL, Multi-TP
     entry, sl, tp1, tp2, tp3, rr = None, None, None, None, None, 0.0
     if temp_signal == "BUY":
         entry, sl, tp1, tp2, tp3, rr = calculate_trade_levels("BUY", current_price, recent_swing_low, current_atr)
     elif temp_signal == "SELL":
         entry, sl, tp1, tp2, tp3, rr = calculate_trade_levels("SELL", current_price, recent_swing_high, current_atr)
 
-    # 12. Signal Quality va Konflikt tekshiruvi (100 ballik)
+    # 15. Signal Quality va Konflikt tekshiruvi
     quality_res = evaluate_signal_quality(
         bias=bias,
         trigger_info=trigger_info,
@@ -201,16 +242,19 @@ def run_scanner(force_notify=False):
         tp1=tp1 or current_price,
         current_price=current_price,
         atr_val=current_atr,
-        rr_ratio=rr
+        rr_ratio=rr,
+        is_judas_bullish=is_judas_bullish,
+        is_judas_bearish=is_judas_bearish,
+        metals_bullish=metals_smt_bullish,
+        metals_bearish=(not metals_smt_bullish and metals_smt_div)
     )
 
-    # Konflikt va minimal sifat nazorati
     if quality_res.conflict_score > MAX_CONFLICT_SCORE:
         temp_signal = "WAIT"
     if conf_score < MIN_CONFLUENCE_SCORE or quality_res.quality_score < MIN_QUALITY_SCORE:
         temp_signal = "WAIT"
 
-    # 13. Sun'iy Intellekt (XGBoost ML) Filtri
+    # 16. Sun'iy Intellekt (XGBoost ML) Filtri
     signal_payload = {
         "symbol": symbol,
         "signal": temp_signal,
@@ -231,10 +275,18 @@ def run_scanner(force_notify=False):
     if not ml_approved:
         temp_signal = "WAIT"
 
-    # 14. Fibonachchi va Mirjalol Insight
+    # 17. Fibonachchi va Boyitilgan Mirjalol Insight
     fib_status = calculate_fibonacci_zones(recent_swing_low, recent_swing_high, current_price, bias)
     mirjalol_insight = generate_mirjalol_insight(
-        bias, smt_msg, session_msg, fib_status, news_msg, regime_res.reason
+        bias=bias, 
+        smt_msg=smt_msg, 
+        session_msg=session_msg, 
+        fib_status=fib_status, 
+        news_msg=news_msg, 
+        regime_reason=regime_res.reason,
+        asian_judas_comment=asian_judas_comment,
+        volume_profile_status=vp_status,
+        metals_smt_msg=metals_smt_msg
     )
 
     final_verdict = ""
@@ -249,8 +301,8 @@ def run_scanner(force_notify=False):
     if ("BUY" in final_verdict or "SELL" in final_verdict) and current_event_time == LAST_SIGNALED_EVENT_TIME:
         already_signaled = True
 
-    # 15. Telegram hisoboti
-    report_text = f"🤖 <b>XAUUSD INSTITUTIONAL SUPER-AI</b>\n"
+    # 18. Telegram hisoboti
+    report_text = f"🤖 <b>XAUUSD QUANT SUPER-ANALYST</b>\n"
     report_text += f"➖➖➖➖➖➖➖➖➖➖➖➖\n"
 
     if already_signaled and not force_notify:
@@ -263,7 +315,7 @@ def run_scanner(force_notify=False):
         report_text += f"⚡ <b>M15 Trigger:</b> {trigger_info}\n\n"
 
         if entry and sl and tp1:
-            report_text += f"📍 <b>ENTRY (Limit qopqon):</b> {entry}\n"
+            report_text += f"📍 <b>ENTRY (Pullback chegirma):</b> {entry}\n"
             report_text += f"🛡️ <b>STOP-LOSS:</b> {sl}\n"
             report_text += f"🎯 <b>TP1 (Skalp):</b> {tp1}\n"
             report_text += f"🚀 <b>TP2 (Target):</b> {tp2}\n"
@@ -276,24 +328,27 @@ def run_scanner(force_notify=False):
 
     print(report_text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", ""))
 
-    # Yangi signal bo'lsa yoki On-Demand so'rov bo'lsa Telegramga yuborish
     should_send = (("BUY" in final_verdict or "SELL" in final_verdict) and not already_signaled) or force_notify
     if should_send:
-        chart_path = draw_and_save_chart(m15_df, temp_signal, entry, sl, tp1, tp2, tp3)
+        chart_path = draw_and_save_chart(
+            df=m15_df, 
+            signal=temp_signal, 
+            entry=entry, 
+            sl=sl, 
+            tp1=tp1, 
+            tp2=tp2, 
+            tp3=tp3,
+            poc=poc_price,
+            asian_high=asian_high,
+            asian_low=asian_low
+        )
         if chart_path and os.path.exists(chart_path):
             send_telegram_photo(chart_path, report_text)
         else:
             send_telegram_message(report_text)
 
-        # Yangi aktiv signal bo'lsa jurnalga yozamiz va avto-order qo'yamiz
         if ("BUY" in final_verdict or "SELL" in final_verdict) and not already_signaled:
             log_signal(signal_payload)
-
-            if ENABLE_AUTO_TRADE and entry and sl and tp2:
-                success, trade_msg = place_limit_order(symbol, temp_signal, entry, sl, tp2)
-                print(f"🤖 MT5 Trade: {trade_msg}")
-                send_telegram_message(f"🤖 <b>MT5 AUTO-TRADE:</b> {trade_msg}")
-
             LAST_SIGNALED_EVENT_TIME = current_event_time
             return current_event_time
 
@@ -304,19 +359,17 @@ def on_demand_analysis():
     run_scanner(force_notify=True)
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("🤖 XAUUSD INSTITUTIONAL SUPER-AI (Mirjalol Asistenti)")
+    print("=" * 65)
+    print("🤖 XAUUSD QUANT SUPER-ANALYST (Mirjalol Yordamchisi)")
     print("🚀 Tizim 24/5 rejimida to'liq avtomatlashtirilgan holda ishga tushdi.")
-    print("=" * 60)
+    print("=" * 65)
 
-    # 1. Telegram interaktiv tugmalarni (Status, Tahlil, Stats) fonida ishga tushirish
     set_analysis_callback(on_demand_analysis)
     start_telegram_listener()
 
-    # 2. Ishga tushishi bilan 1 marta darhol to'liq skaner qilib hisobot beradi
-    LAST_SIGNALED_EVENT_TIME = run_scanner(force_notify=False)
+    # 2. Ishga tushishi bilan 1 marta darhol to'liq skaner qilib, natijani Telegramga yuboradi (KUTISH bo'lsa ham)
+    LAST_SIGNALED_EVENT_TIME = run_scanner(force_notify=True)
 
-    # 3. Har 15 daqiqada (yangi sham yopilishi bilan 5-soniyada) doimiy skaner qilish
     while True:
         now = datetime.now()
         if now.minute % 15 == 0 and now.second == 5:

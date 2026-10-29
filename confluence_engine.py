@@ -1,6 +1,17 @@
-def calculate_confluence(bias, trigger_info, smt_msg, is_active_session, high_volume, regime="MIXED"):
+def calculate_confluence(
+    bias, 
+    trigger_info, 
+    smt_msg, 
+    is_active_session, 
+    high_volume, 
+    regime="MIXED",
+    is_judas=False,
+    metals_smt_confirmed=False
+):
     """
-    Barcha dvigatellardan kelgan ma'lumotlarni yig'ib 20 ballik tizimda baholaydi.
+    Barcha dvigatellardan kelgan ma'lumotlarni yig'ib baholaydi.
+    Asosiy signallarni bo'g'ib qo'ymaydi — yangi institutsional faktorlar 
+    (Judas Swing, Metallar SMT) signalni yanada mustahkamlovchi BONUS ballari beradi!
     """
     score = 0
     
@@ -27,17 +38,26 @@ def calculate_confluence(bias, trigger_info, smt_msg, is_active_session, high_vo
     if is_active_session:
         score += 2
 
-    # 6. Bozor Iqlimi (Regime) bonusi / jarimasi
+    # 6. Bozor Iqlimi (Regime)
     if regime in ["TRENDING_UP", "TRENDING_DOWN"]:
         score = min(20, score + 1)
     elif regime in ["HIGH_VOLATILITY_RISK", "LOW_LIQUIDITY_CHOP"]:
         score = max(0, score - 3)
+
+    # 7. YANGI INSTITUTSIONAL BONUSLAR (Ziddiyat qilmaydi, sifatni oshiradi):
+    if is_judas:
+        score += 2 # Osiyo likvidligi tuzog'i olingan bo'lsa
         
+    if metals_smt_confirmed:
+        score += 2 # Oltin va Kumush bir-birini tasdiqlasa
+
     # Darajani aniqlash
-    if score >= 15:
+    if score >= 16:
+        grade = "SUPER STRONG 🔥🔥"
+    elif score >= 13:
         grade = "STRONG 🔥"
-    elif score >= 12:
-        grade = "MEDIUM ⚡"
+    elif score >= 10:
+        grade = "VALID ⚡"
     else:
         grade = "WEAK ⚠️"
         

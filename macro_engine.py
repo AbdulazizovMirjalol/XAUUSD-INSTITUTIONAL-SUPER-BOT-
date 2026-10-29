@@ -9,7 +9,7 @@ def calculate_fibonacci_zones(recent_low, recent_high, current_price, trend):
     if impulse_range <= 0:
         return "Konsolidatsiya (Tor diapazon)"
         
-    equilibrium = low + (impulse_range * 0.5) # 50% muvozanat chizig'i
+    equilibrium = low + (impulse_range * 0.5)
     
     if "BULLISH" in str(trend).upper():
         fib_618 = high - (impulse_range * 0.618)
@@ -35,11 +35,22 @@ def calculate_fibonacci_zones(recent_low, recent_high, current_price, trend):
             
     return "Yonlama (Range) zona"
 
-def generate_mirjalol_insight(bias, smt_msg, session_msg, fib_status, news_msg, regime_reason=""):
+def generate_mirjalol_insight(
+    bias, 
+    smt_msg, 
+    session_msg, 
+    fib_status, 
+    news_msg, 
+    regime_reason="",
+    asian_judas_comment="",
+    volume_profile_status="",
+    metals_smt_msg=""
+):
     """
-    Mirjalol uchun barcha makroiqtisodiy, tizimli va texnik tahlillarni tushunarli tilda jamlaydi.
+    Mirjalol uchun barcha makroiqtisodiy, tizimli va yangi institutsional 
+    tahlillarni (Judas Swing, Volume Profile POC, Metallar SMT) tushunarli tilda jamlaydi.
     """
-    insight = "Assalomu alaykum Mirjalol, joriy bozor holati:\n\n"
+    insight = "Assalomu alaykum Mirjalol, joriy bozor tahlili:\n\n"
     
     # 1. Global Trend
     if "BULLISH" in str(bias).upper():
@@ -50,21 +61,33 @@ def generate_mirjalol_insight(bias, smt_msg, session_msg, fib_status, news_msg, 
         insight += f"⚪ <b>Makro Yo'nalish:</b> Bozor aniq yo'nalishsiz (Neutral).\n"
         
     insight += f"💵 <b>Dollar va Oltin:</b> {smt_msg}\n"
+
+    # 2. Metallararo SMT (Oltin vs Kumush)
+    if metals_smt_msg:
+        insight += f"{metals_smt_msg}\n"
     
-    # 2. Banklar va Bozor Iqlimi
+    # 3. Banklar, Killzone va Osiyo diapazoni
     if "LONDON" in session_msg or "NEW YORK" in session_msg:
         insight += f"🏦 <b>Banklar Faolligi:</b> {session_msg} — yirik banklar bozorda, hajmlar haqiqiy.\n"
     else:
         insight += f"💤 <b>Banklar Faolligi:</b> {session_msg} — yirik banklar passiv, tuzoqlardan ehtiyot bo'ling.\n"
 
+    if asian_judas_comment:
+        insight += f"🎯 <b>Osiyo / Judas Swing:</b> {asian_judas_comment}\n"
+
+    # 4. Volume Profile (Hajm markazi)
+    if volume_profile_status:
+        insight += f"📊 <b>Volume Profile:</b> {volume_profile_status}\n"
+
+    # 5. Bozor Iqlimi
     if regime_reason:
-        insight += f"🌡️ <b>Bozor Iqlimi (Regime):</b> {regime_reason}\n"
+        insight += f"🌡️ <b>Bozor Iqlimi:</b> {regime_reason}\n"
         
-    # 3. Fibonachchi joylashuvi
-    insight += f"📐 <b>Fibonachchi (Narx holati):</b> {fib_status}\n"
+    # 6. Fibonachchi
+    insight += f"📐 <b>Fibonachchi (Narx):</b> {fib_status}\n"
     
-    # 4. Yangiliklar
+    # 7. Yangiliklar
     insight += f"📰 <b>Yangiliklar Foni:</b> {news_msg}\n"
     
-    insight += "\n<i>💡 Tavsiya: Texnik signal, SMT tasdiq va bozor iqlimi mos kelgandagina intizom bilan savdoga kiring!</i>"
+    insight += "\n<i>💡 Xulosa: Ushbu ko'p qatlamli tahlillar tasdiqlangandagina o'z risk-menejmentingiz bilan savdoga kiring!</i>"
     return insight
